@@ -1,5 +1,4 @@
-*.rsa
-*.pkg*
-src
-pkg
-packages
+src/
+pkg/
+/packages/
+glibc-bin-*.tar.gz

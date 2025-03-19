@@ -1,0 +1,219 @@
+version: 38
+jobs:
+- name: github-push
+  jobExecutor: barbatos-docker
+  steps:
+  - !PushRepository
+    name: push
+    remoteUrl: https://github.com/sevmonster/alpine-pkg-glibc
+    passwordSecret: github-pat
+    force: true
+    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
+  triggers:
+  - !BranchUpdateTrigger
+    projects: sev/alpine-pkg-glibc
+  - !TagCreateTrigger
+    projects: sev/alpine-pkg-glibc
+  retryCondition: never
+  maxRetries: 3
+  retryDelay: 30
+  timeout: 14400
+- name: github-pull
+  jobExecutor: barbatos-docker
+  steps:
+  - !PullRepository
+    name: pull
+    remoteUrl: https://github.com/sevmonster/alpine-pkg-glibc
+    passwordSecret: github-pat
+    refs: refs/heads/* refs/tags/*
+    withLfs: false
+    force: true
+    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
+  retryCondition: never
+  maxRetries: 3
+  retryDelay: 30
+  timeout: 14400
+- name: build-glibc
+  jobExecutor: barbatos-docker
+  steps:
+  - !SetupCacheStep
+    name: cache-apk-edge-x86_64
+    key: apk-cache-edge-x86_64
+    paths:
+    - /etc/apk/cache
+    uploadStrategy: UPLOAD_IF_CHANGED
+    uploadProjectPath: sev
+    uploadAccessTokenSecret: sev-access-token
+    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
+  - !SetupCacheStep
+    name: cache-glibc-bin
+    key: glibc-bin
+    paths:
+    - glibc-bin
+    uploadStrategy: UPLOAD_IF_CHANGED
+    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
+  - !CheckoutStep
+    name: checkout
+    cloneCredential: !HttpCredential
+      accessTokenSecret: sev-access-token
+    withLfs: false
+    withSubmodules: true
+    cloneDepth: 1
+    checkoutPath: alpine-pkg-glibc
+    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
+  - !CommandStep
+    name: extract-version
+    runInContainer: true
+    image: alpine:edge
+    interpreter: !DefaultInterpreter
+      commands: |
+        # source to get $pkgver and $pkgrel
+        . alpine-pkg-glibc/APKBUILD
+        echo "$pkgver-r$pkgrel" > version
+        echo "extracted version from APKBUILD: $(cat version)"
+    useTTY: true
+    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
+  - !SetBuildVersionStep
+    name: set-version
+    buildVersion: '@file:version@'
+    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
+  - !CommandStep
+    name: build-glibc-bin
+    runInContainer: true
+    image: alpine:edge
+    interpreter: !DefaultInterpreter
+      commands: |
+        set -e
+
+        # read version
+        BUILD_VERSION="$(cat version)"
+        # strip revision from version
+        set -- $(IFS=-; echo ${$+$BUILD_VERSION})
+
+        apk add curl jq
+        function api() {
+            x="$1"
+            shift
+            curl -sAOneDev -GH"Authorization: Bearer $SECRET" \
+                 "$SERVER_URL/~api/$x" --data-urlencode "$@@"
+        }
+
+        echo "checking for successful builds of $BUILD_VERSION..."
+        for v in $(
+          api builds \
+            'query="Project" is "'"$PROJECT_PATH"'" and "Job" is "'"$JOB_NAME"'" and successful order by "Submit Date" desc' \
+            -d offset=0 -d count=10 |
+          jq -r '.[] | "\(.version)~~\(.number)"'
+        ); do
+            if [ "${v%~~*}" = "$BUILD_VERSION" ]; then
+                x="$JOB_NAME #${v##*~~}"
+                if [ "$ALLOW_REBUILD" != Yes ]; then
+                    echo "previous build found: $x" >&2
+                    exit 1
+                fi
+                echo "successful build found, ignoring it: $x"
+            fi
+        done
+
+        echo 'checking build cache...'
+        f="glibc-bin/glibc-bin-$BUILD_VERSION.tar.gz"
+        if [ -f "$f" ]; then
+            if [ "$IGNORE_CACHE" != Yes ]; then
+                echo "cache hit and not ignoring cache: $f" >&2
+                exit 1
+            fi
+            echo "cached build found, ignoring it: $f"
+        fi
+
+        # clear cache
+        rm -f glibc-bin/glibc-bin-*.tar.gz
+
+        echo 'building tarball...'
+        apk add docker
+        docker run --rm --env STDOUT=1 \
+          sgerrand/glibc-builder $1 /usr/glibc-compat > "$f"
+        touch "$f"
+
+        echo 'checking if we can/need to commit checksum...'
+        # test if commit (onedev checks out commits not refs) is the head of a branch
+        apk add git
+        cd alpine-pkg-glibc
+        b="$(git for-each-ref --format='%(objectname) %(refname:short)' refs/heads |
+             grep "^$(git rev-parse HEAD)" | awk '{print $2}' | head -1)"
+        if [ -z "$b" ]; then
+            echo "no branch found for commit $(git show -s --pretty='%h %s%d' HEAD)" >&2
+            exit
+        fi
+
+        echo 'calculating checksum...'
+        apk add abuild
+        addgroup -S abuild 2>/dev/null && true #already exists on newer alpine
+        adduser -SDGabuild -s/bin/sh abuild
+        chown abuild:abuild . APKBUILD
+        ln -s "../$f" .
+        su -c 'abuild checksum' abuild
+        chown $(id -u):$(id -g) . APKBUILD
+
+        echo "committing to branch $b..."
+        git add APKBUILD
+        if git diff --staged --quiet; then
+            echo 'checksum is unchanged, not committing'
+            exit
+        fi
+        git config user.name sev
+        git config user.email git@@sev.monster
+        git commit -m "[no ci] ci: update checksum for $BUILD_VERSION"
+        git tag -a "$BUILD_VERSION" -m "ci #$BUILD_NUMBER: release $BUILD_VERSION"
+        git push origin "HEAD:refs/heads/$b" "refs/tags/$BUILD_VERSION"
+    envVars:
+    - name: SECRET
+      value: '@secret:sev-access-token@'
+    - name: SERVER_URL
+      value: '@server_url@'
+    - name: PROJECT_PATH
+      value: '@project_path@'
+    - name: JOB_NAME
+      value: '@job_name@'
+    - name: ALLOW_REBUILD
+      value: '@param:Allow Rebuild@'
+    - name: IGNORE_CACHE
+      value: '@param:Ignore Cache@'
+    - name: BUILD_NUMBER
+      value: '@build_number@'
+    useTTY: false
+    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
+  - !PushRepository
+    name: push-github
+    remoteUrl: https://github.com/sevmonster/alpine-pkg-glibc
+    passwordSecret: github-pat
+    force: false
+    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
+  paramSpecs:
+  - !BooleanParam
+    name: Ignore Cache
+    description: Built <code>glibc-bin-*.tar.gz</code> tarballs are cached for job retries with same version. Enabling this parameter will ignore the cache and force a fresh build.
+    defaultValueProvider: !FalseDefaultValue {}
+  - !BooleanParam
+    name: Allow Rebuild
+    description: Ignore the presence of previous builds matching the extracted <code>APKBUILD</code> version.
+    defaultValueProvider: !FalseDefaultValue {}
+  triggers:
+  - !BranchUpdateTrigger
+    branches: master
+    paths: APKBUILD
+    projects: sev/aports
+    paramMatrix:
+    - name: Ignore Cache
+      secret: false
+      valuesProvider: !SpecifiedValues
+        values:
+        - - 'No'
+    - name: Allow Rebuild
+      secret: false
+      valuesProvider: !SpecifiedValues
+        values:
+        - - 'No'
+  retryCondition: never
+  maxRetries: 3
+  retryDelay: 30
+  timeout: 14400

@@ -1,10 +1,11 @@
 # `alpine-pkg-glibc`
 This is the [GNU C Library](https://gnu.org/software/libc/) as an Alpine Linux
 package, so that you may run binaries linked against `glibc`. This package
-uses a custom-built `glibc` binary as a source, built by
+uses as a source a custom-built `glibc` binary, built by
 [**@sgerrand**](https://github.com/sgerrand)'s
 [docker-glibc-builder](https://github.com/sgerrand/docker-glibc-builder).
-Likewise, this is a fork of his
+
+This is a fork of his
 [alpine-pkg-glibc](https://github.com/sgerrand/alpine-pkg-glibc), but updated
 to the latest `glibc` version and with new CI. I did this as **@sgerrand** has
 neglected to update the package in his repository for quite a long time now.
@@ -17,11 +18,12 @@ this repo.
 If you have any features or fixes, PRs are accepted on
 [GitHub](https://github.com/sevmonster/alpine-pkg-glibc/pulls). Submit issues
 via [OneDev](https://git.sev.monster/sev/alpine-pkg-glibc/~issues) by
-[sending an email](onedev+sev/alpine-pkg-glibc@git.sev.monster).
+[sending an email](mailto:onedev+sev/alpine-pkg-glibc@git.sev.monster).
 
 ## Download
 Binary tarball releases are built and made available via
-[OneDev CI](https://git.sev.monster/sev/alpine-pkg-glibc/~builds).
+[OneDev CI](https://git.sev.monster/sev/alpine-pkg-glibc/~builds?query=%22Job%22+is+%22build-glibc%22+and+successful)
+build artifacts.
 
 ## Build
 To build your own Alpine package, you first need a built binary tarball. You

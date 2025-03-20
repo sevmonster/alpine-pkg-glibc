@@ -164,7 +164,9 @@ jobs:
         git config user.email git@@sev.monster
         git commit -m "[no ci] ci: update checksum for $BUILD_VERSION"
         git tag -a "$BUILD_VERSION" -m "ci #$BUILD_NUMBER: release $BUILD_VERSION"
-        git push origin "HEAD:refs/heads/$b" "refs/tags/$BUILD_VERSION"
+        for x in origin 'https://github.com/sevmonster/alpine-pkg-glibc'; do
+            git push "$x" "HEAD:refs/heads/$b" "refs/tags/$BUILD_VERSION"
+        done
     envVars:
     - name: SECRET
       value: '@secret:sev-access-token@'
@@ -181,12 +183,6 @@ jobs:
     - name: BUILD_NUMBER
       value: '@build_number@'
     useTTY: false
-    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
-  - !PushRepository
-    name: push-github
-    remoteUrl: https://github.com/sevmonster/alpine-pkg-glibc
-    passwordSecret: github-pat
-    force: false
     condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
   paramSpecs:
   - !BooleanParam

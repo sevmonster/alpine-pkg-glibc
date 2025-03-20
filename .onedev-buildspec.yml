@@ -184,6 +184,11 @@ jobs:
       value: '@build_number@'
     useTTY: false
     condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
+  - !PublishArtifactStep
+    name: publish-artifacts
+    sourcePath: glibc-bin
+    artifacts: glibc-bin-*-r*.tar.gz
+    condition: ALWAYS
   paramSpecs:
   - !BooleanParam
     name: Ignore Cache

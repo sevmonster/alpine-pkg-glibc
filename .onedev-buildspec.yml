@@ -94,45 +94,46 @@ jobs:
         function api() {
             x="$1"
             shift
-            curl -sAOneDev -GH"Authorization: Bearer $SECRET" \
+            curl -sA"@project_name@/$BUILD_NUMBER" -GH"Authorization: Bearer $SECRET" \
                  "$SERVER_URL/~api/$x" --data-urlencode "$@@"
         }
 
         echo "checking for successful builds of $BUILD_VERSION..."
         for v in $(
           api builds \
-            'query="Project" is "'"$PROJECT_PATH"'" and "Job" is "'"$JOB_NAME"'" and successful order by "Submit Date" desc' \
+            'query="Project" is "'"$PROJECT_PATH"'" and "Job" is "'"$JOB_NAME"\
+        '"          and successful order by "Submit Date" desc' \
             -d offset=0 -d count=10 |
           jq -r '.[] | "\(.version)~~\(.number)"'
         ); do
             if [ "${v%~~*}" = "$BUILD_VERSION" ]; then
-                x="$JOB_NAME #${v##*~~}"
-                if [ "$ALLOW_REBUILD" != Yes ]; then
-                    echo "previous build found: $x" >&2
-                    exit 1
-                fi
-                echo "successful build found, ignoring it: $x"
+                echo "previous build found: "$JOB_NAME #${v##*~~}"" >&2
+                [ "$ALLOW_RETRIES" != Yes ] && exit 1
             fi
         done
 
         echo 'checking build cache...'
         f="glibc-bin/glibc-bin-$BUILD_VERSION.tar.gz"
         if [ -f "$f" ]; then
-            if [ "$IGNORE_CACHE" != Yes ]; then
-                echo "cache hit and not ignoring cache: $f" >&2
-                exit 1
-            fi
-            echo "cached build found, ignoring it: $f"
+            echo "cache hit: $f" >&2
+            [ "$FAIL_CACHED" = Yes ] && exit 1
         fi
 
-        # clear cache
-        rm -f glibc-bin/glibc-bin-*.tar.gz
+        if [ "$CLEAR_CACHE" = Yes ]; then
+            echo 'clearing cache...'
+            rm -f glibc-bin/glibc-bin-*.tar.gz
+        fi
 
-        echo 'building tarball...'
-        apk add docker
-        docker run --rm --env STDOUT=1 \
-          sgerrand/glibc-builder $1 /usr/glibc-compat > "$f"
-        touch "$f"
+        if [ -f "$f" ]; then
+            echo 'build already exists, reusing it'
+            # extend cache lifetime
+            touch "$f"
+        else
+            echo 'building tarball...'
+            apk add docker
+            docker run --rm --env STDOUT=1 \
+              sgerrand/glibc-builder $1 /usr/glibc-compat > "$f"
+        fi
 
         echo 'checking if we can/need to commit checksum...'
         # test if commit (onedev checks out commits not refs) is the head of a branch
@@ -141,13 +142,12 @@ jobs:
         b="$(git for-each-ref --format='%(objectname) %(refname:short)' refs/heads |
              grep "^$(git rev-parse HEAD)" | awk '{print $2}' | head -1)"
         if [ -z "$b" ]; then
-            echo "no branch found for commit $(git show -s --pretty='%h %s%d' HEAD)" >&2
+            echo "no branch HEAD for commit $(git show -s --pretty='%h %s%d' HEAD)" >&2
             exit
         fi
 
         echo 'calculating checksum...'
         apk add abuild
-        addgroup -S abuild 2>/dev/null && true #already exists on newer alpine
         adduser -SDGabuild -s/bin/sh abuild
         chown abuild:abuild . APKBUILD
         ln -s "../$f" .
@@ -164,10 +164,15 @@ jobs:
         git config user.email git@@sev.monster
         git commit -m "[no ci] ci: update checksum for $BUILD_VERSION"
         git tag -a "$BUILD_VERSION" -m "ci #$BUILD_NUMBER: release $BUILD_VERSION"
-        for x in origin 'https://github.com/sevmonster/alpine-pkg-glibc'; do
-            git push "$x" "HEAD:refs/heads/$b" "refs/tags/$BUILD_VERSION"
-        done
+        git push origin "HEAD:refs/heads/$b"
+        git push -f origin "refs/tags/$BUILD_VERSION"
+        git push -f \
+          "https://sevmonster:$GITHUB_PAT@@github.com/sevmonster/alpine-pkg-glibc" \
+          "HEAD:refs/heads/$b" || true
+        # tag will be pushed to gh with trigger, we can skip
     envVars:
+    - name: BUILD_NUMBER
+      value: '@build_number@'
     - name: SECRET
       value: '@secret:sev-access-token@'
     - name: SERVER_URL
@@ -176,12 +181,14 @@ jobs:
       value: '@project_path@'
     - name: JOB_NAME
       value: '@job_name@'
-    - name: ALLOW_REBUILD
-      value: '@param:Allow Rebuild@'
-    - name: IGNORE_CACHE
-      value: '@param:Ignore Cache@'
-    - name: BUILD_NUMBER
-      value: '@build_number@'
+    - name: ALLOW_RETRIES
+      value: '@param:Allow Retries@'
+    - name: FAIL_CACHED
+      value: '@param:Fail If Cached@'
+    - name: CLEAR_CACHE
+      value: '@param:Clear Cache@'
+    - name: GITHUB_PAT
+      value: '@secret:github-pat@'
     useTTY: false
     condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
   - !PublishArtifactStep
@@ -191,12 +198,21 @@ jobs:
     condition: ALWAYS
   paramSpecs:
   - !BooleanParam
-    name: Ignore Cache
-    description: Built <code>glibc-bin-*.tar.gz</code> tarballs are cached for job retries with same version. Enabling this parameter will ignore the cache and force a fresh build.
+    name: Allow Retries
+    description: If disabled, the build will fail if there are any previous successful builds matching the version extracted from <code>APKBUILD</code> for this commit. Artifacts are not checked.
+    defaultValueProvider: !TrueDefaultValue {}
+  - !BooleanParam
+    name: Fail If Cached
+    description: Built <code>glibc-bin-*.tar.gz</code> tarballs are cached after build. Enabling this parameter will fail the build if there is a cached tarball from a previous build.
     defaultValueProvider: !FalseDefaultValue {}
   - !BooleanParam
-    name: Allow Rebuild
-    description: Ignore the presence of previous builds matching the extracted <code>APKBUILD</code> version.
+    name: Clear Cache
+    description: If a build already exists in the cache, and the build is not configured to fail in such a case, it will not be rebuilt, and will be used to tag a release. Enabling this will clear the cache and build a fresh tarball.
+    showCondition:
+      inputName: Fail If Cached
+      valueMatcher: !ValueIsOneOf
+        values:
+        - 'No'
     defaultValueProvider: !FalseDefaultValue {}
   triggers:
   - !BranchUpdateTrigger
@@ -204,16 +220,19 @@ jobs:
     paths: APKBUILD
     projects: sev/aports
     paramMatrix:
-    - name: Ignore Cache
+    - name: Allow Retries
       secret: false
       valuesProvider: !SpecifiedValues
         values:
         - - 'No'
-    - name: Allow Rebuild
+    - name: Fail If Cached
       secret: false
       valuesProvider: !SpecifiedValues
         values:
-        - - 'No'
+        - - 'Yes'
+    - name: Clear Cache
+      secret: false
+      valuesProvider: !IgnoreValues {}
   retryCondition: never
   maxRetries: 3
   retryDelay: 30

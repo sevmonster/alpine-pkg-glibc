@@ -5,7 +5,7 @@ jobs:
   steps:
   - !PushRepository
     name: push
-    remoteUrl: https://github.com/sevmonster/alpine-pkg-glibc
+    remoteUrl: https://github.com/@property:github-repo@
     passwordSecret: github-pat
     force: true
     condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
@@ -23,7 +23,7 @@ jobs:
   steps:
   - !PullRepository
     name: pull
-    remoteUrl: https://github.com/sevmonster/alpine-pkg-glibc
+    remoteUrl: https://github.com/@property:github-repo@
     passwordSecret: github-pat
     refs: refs/heads/* refs/tags/*
     withLfs: false
@@ -168,7 +168,7 @@ jobs:
         echo "pushing commit..."
         git push origin "HEAD:refs/heads/$b"
         git push -f \
-          "https://sevmonster:$GITHUB_PAT@@github.com/sevmonster/alpine-pkg-glibc" \
+          "https://$GITHUB_USER:$GITHUB_PAT@@github.com/$GITHUB_REPO" \
           "HEAD:refs/heads/$b" || true
 
         echo "creating and pushing tag..."
@@ -192,8 +192,12 @@ jobs:
       value: '@param:Fail If Cached@'
     - name: CLEAR_CACHE
       value: '@param:Clear Cache@'
+    - name: GITHUB_USER
+      value: '@property:github-user@'
     - name: GITHUB_PAT
       value: '@secret:github-pat@'
+    - name: GITHUB_REPO
+      value: '@property:github-repo@'
     useTTY: false
     condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
   - !PublishArtifactStep

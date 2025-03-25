@@ -164,12 +164,16 @@ jobs:
         git config user.name sev
         git config user.email git@@sev.monster
         git commit -m "[no ci] ci: update checksum for $BUILD_VERSION"
-        git tag -a "$BUILD_VERSION" -m "ci #$BUILD_NUMBER: release $BUILD_VERSION"
+
+        echo "pushing commit..."
         git push origin "HEAD:refs/heads/$b"
-        git push -f origin "refs/tags/$BUILD_VERSION"
         git push -f \
           "https://sevmonster:$GITHUB_PAT@@github.com/sevmonster/alpine-pkg-glibc" \
           "HEAD:refs/heads/$b" || true
+
+        echo "creating and pushing tag..."
+        git tag -a "$BUILD_VERSION" -m "ci #$BUILD_NUMBER: release $BUILD_VERSION"
+        git push -f origin "refs/tags/$BUILD_VERSION"
         # tag will be pushed to gh with trigger, we can skip
     envVars:
     - name: BUILD_NUMBER

@@ -42,6 +42,7 @@ jobs:
     paths:
     - /etc/apk/cache
     uploadStrategy: UPLOAD_IF_CHANGED
+    changeDetectionExcludes: installed
     uploadProjectPath: sev
     uploadAccessTokenSecret: sev-access-token
     condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL

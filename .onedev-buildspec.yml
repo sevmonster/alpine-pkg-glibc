@@ -108,7 +108,7 @@ jobs:
           jq -r '.[] | "\(.version)~~\(.number)"'
         ); do
             if [ "${v%~~*}" = "$BUILD_VERSION" ]; then
-                echo "previous build found: "$JOB_NAME #${v##*~~}"" >&2
+                echo "previous build found: $JOB_NAME #${v##*~~}" >&2
                 [ "$ALLOW_RETRIES" != Yes ] && exit 1
             fi
         done
@@ -136,18 +136,19 @@ jobs:
               sgerrand/glibc-builder $1 /usr/glibc-compat > "$f"
         fi
 
-        echo 'checking if we can/need to commit checksum...'
-        # test if commit (onedev checks out commits not refs) is the head of a branch
+        echo 'checking if we can commit checksum...'
+        # test if commit (onedev checks out commits not refs) is the tip of a branch
         apk add git
         cd alpine-pkg-glibc
+        commit="$(git rev-parse HEAD)"
         b="$(git for-each-ref --format='%(objectname) %(refname:short)' refs/heads |
-             grep "^$(git rev-parse HEAD)" | awk '{print $2}' | head -1)"
+             grep "^$commit" | awk '{print $2}' | head -1)"
         if [ -z "$b" ]; then
-            echo "no branch HEAD for commit $(git show -s --pretty='%h %s%d' HEAD)" >&2
+            echo "no branch has tip $(git show -s --pretty='%h: %s%d' HEAD)" >&2
             exit
         fi
 
-        echo 'calculating checksum...'
+        echo "build commit $commit is tip of branch $b. calculating checksum..."
         apk add abuild
         adduser -SDGabuild -s/bin/sh abuild
         chown abuild:abuild . APKBUILD
@@ -155,7 +156,7 @@ jobs:
         su -c 'abuild checksum' abuild
         chown $(id -u):$(id -g) . APKBUILD
 
-        echo "committing to branch $b..."
+        echo "creating and pushing commit..."
         git add APKBUILD
         if git diff --staged --quiet; then
             echo 'checksum is unchanged, not committing'
@@ -164,8 +165,6 @@ jobs:
         git config user.name sev
         git config user.email git@@sev.monster
         git commit -m "[no ci] ci: update checksum for $BUILD_VERSION"
-
-        echo "pushing commit..."
         git push origin "HEAD:refs/heads/$b"
         git push -f \
           "https://$GITHUB_USER:$GITHUB_PAT@@github.com/$GITHUB_REPO" \
@@ -204,7 +203,7 @@ jobs:
     name: publish-artifacts
     sourcePath: glibc-bin
     artifacts: glibc-bin-*-r*.tar.gz
-    condition: ALWAYS
+    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
   paramSpecs:
   - !BooleanParam
     name: Allow Retries

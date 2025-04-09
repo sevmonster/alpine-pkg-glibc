@@ -67,6 +67,16 @@ Installation instructions are available in the
 If you are using tools like `localedef` you will need the `glibc-bin` and
 `glibc-i18n` packages in addition to the `glibc` package.
 
+### `gcompat`/`libc6-compat`?
+Previously, if you wanted to also install `gcompat` (previously `libc6-compat`), which was also a dependency of `glibc-bin`, you had to:
+1. Install `gcompat` *first*
+2. Remove its `ld-linux-x86-64.so` loader from `/lib`
+3. Install `glibc`/`glibc-bin` with `--force-overwrite`
+
+This was a cumbersome and error-prone process. To avoid that issue, this
+package will overwrite `gcompat` if it is installed, by setting
+`replaces=gcompat`.
+
 ## Locales
 You will need to generate your locale if you would like to use a specific one
 for your glibc application. You can do this by installing the `glibc-i18n`

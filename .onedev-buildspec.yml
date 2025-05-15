@@ -1,38 +1,5 @@
-version: 38
+version: 39
 jobs:
-- name: github-push
-  jobExecutor: barbatos-docker
-  steps:
-  - !PushRepository
-    name: push
-    remoteUrl: https://github.com/@property:github-repo@
-    passwordSecret: github-pat
-    force: true
-    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
-  triggers:
-  - !BranchUpdateTrigger
-    projects: sev/alpine-pkg-glibc
-  - !TagCreateTrigger
-    projects: sev/alpine-pkg-glibc
-  retryCondition: never
-  maxRetries: 3
-  retryDelay: 30
-  timeout: 14400
-- name: github-pull
-  jobExecutor: barbatos-docker
-  steps:
-  - !PullRepository
-    name: pull
-    remoteUrl: https://github.com/@property:github-repo@
-    passwordSecret: github-pat
-    refs: refs/heads/* refs/tags/*
-    withLfs: false
-    force: true
-    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
-  retryCondition: never
-  maxRetries: 3
-  retryDelay: 30
-  timeout: 14400
 - name: build-glibc
   jobExecutor: barbatos-docker
   steps:
@@ -136,15 +103,15 @@ jobs:
               sgerrand/glibc-builder $1 /usr/glibc-compat > "$f"
         fi
 
-        echo 'checking if we can commit checksum...'
+        echo "checking if we can commit checksum for $commit..."
         # test if commit (onedev checks out commits not refs) is the tip of a branch
         apk add git
         cd alpine-pkg-glibc
         commit="$(git rev-parse HEAD)"
         b="$(git for-each-ref --format='%(objectname) %(refname:short)' refs/heads |
-             grep "^$commit" | awk '{print $2}' | head -1)"
+             awk -v c="$commit" '$1 == c {print $2; exit}')"
         if [ -z "$b" ]; then
-            echo "no branch has tip $(git show -s --pretty='%h: %s%d' HEAD)" >&2
+            echo "no branch has commit as tip" >&2
             exit
         fi
 
@@ -226,7 +193,7 @@ jobs:
   - !BranchUpdateTrigger
     branches: master
     paths: APKBUILD
-    projects: sev/aports
+    projects: sev/alpine-pkg-glibc
     paramMatrix:
     - name: Allow Retries
       secret: false
@@ -240,7 +207,42 @@ jobs:
         - - 'Yes'
     - name: Clear Cache
       secret: false
-      valuesProvider: !IgnoreValues {}
+      valuesProvider: !SpecifiedValues
+        values:
+        - - 'No'
+  retryCondition: never
+  maxRetries: 3
+  retryDelay: 30
+  timeout: 14400
+- name: github-push
+  jobExecutor: barbatos-docker
+  steps:
+  - !PushRepository
+    name: push
+    remoteUrl: https://github.com/@property:github-repo@
+    passwordSecret: github-pat
+    force: true
+    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
+  triggers:
+  - !BranchUpdateTrigger
+    projects: sev/alpine-pkg-glibc
+  - !TagCreateTrigger
+    projects: sev/alpine-pkg-glibc
+  retryCondition: never
+  maxRetries: 3
+  retryDelay: 30
+  timeout: 14400
+- name: github-pull
+  jobExecutor: barbatos-docker
+  steps:
+  - !PullRepository
+    name: pull
+    remoteUrl: https://github.com/@property:github-repo@
+    passwordSecret: github-pat
+    refs: refs/heads/* refs/tags/*
+    withLfs: false
+    force: true
+    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
   retryCondition: never
   maxRetries: 3
   retryDelay: 30

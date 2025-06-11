@@ -15,10 +15,11 @@ neglected to update the package in his repository for quite a long time now.
 adding new features to or fixing the Docker build image, or making changes to
 this repo.
 
-If you have any features or fixes, PRs are accepted on
-[GitHub](https://github.com/sevmonster/alpine-pkg-glibc/pulls). Submit issues
-via [OneDev](https://git.sev.monster/sev/alpine-pkg-glibc/~issues) by
-[sending an email](mailto:onedev+sev/alpine-pkg-glibc@git.sev.monster).
+If you have any features or fixes,
+[open an issue](https://git.sev.monster/sev/alpine-pkg-glibc/~issues) or
+[send a PR](https://github.com/sevmonster/alpine-pkg-glibc/~pulls) on OneDev.
+You may also
+[open an issue via email](mailto:onedev+sev/alpine-pkg-glibc@git.sev.monster).
 
 ## Download
 Binary tarball releases are built and made available via
@@ -26,7 +27,7 @@ Binary tarball releases are built and made available via
 build artifacts.
 
 ## Build
-To build your own Alpine package, you first need a built binary tarball. You
+To build your own Alpine package, you first need a built binary tarball. You   
 can get one from the CI artifacts as mentioned above, or by building it:
 
 ```sh

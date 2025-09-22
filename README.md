@@ -1,3 +1,6 @@
+> ## ⚠️ Known Issue: 2.42+ will not build
+> Due to @sgerrand's docker-glibc-builder being out of date, 2.42 and above will not build. I'm not interested in fixing this right now (would require forking and updating the container) but I might do it in the future. If you need the latest glibc, fix that container and point to the new container in `build.sh`.
+
 # `alpine-pkg-glibc`
 This is the [GNU C Library](https://gnu.org/software/libc/) as an Alpine Linux
 package, so that you may run binaries linked against `glibc`. This package

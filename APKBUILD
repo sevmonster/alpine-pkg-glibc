@@ -1,7 +1,7 @@
 # Maintainer: sev <alpine@sev.monster>
 
 pkgname="glibc"
-pkgver=2.41
+pkgver=2.42
 pkgrel=0
 pkgdesc="GNU C Library compatibility layer"
 arch="x86_64"

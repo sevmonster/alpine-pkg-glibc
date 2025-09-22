@@ -1,9 +1,9 @@
-version: 39
+version: 41
 jobs:
 - name: build-glibc
   jobExecutor: barbatos-docker
   steps:
-  - !SetupCacheStep
+  - type: SetupCacheStep
     name: cache-apk-edge-x86_64
     key: apk-cache-edge-x86_64
     paths:
@@ -12,44 +12,52 @@ jobs:
     changeDetectionExcludes: installed
     uploadProjectPath: sev
     uploadAccessTokenSecret: sev-access-token
-    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
-  - !SetupCacheStep
+    condition: SUCCESSFUL
+    optional: false
+  - type: SetupCacheStep
     name: cache-glibc-bin
     key: glibc-bin
     paths:
     - glibc-bin
     uploadStrategy: UPLOAD_IF_CHANGED
-    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
-  - !CheckoutStep
+    condition: SUCCESSFUL
+    optional: false
+  - type: CheckoutStep
     name: checkout
-    cloneCredential: !HttpCredential
+    cloneCredential:
+      type: HttpCredential
       accessTokenSecret: sev-access-token
     withLfs: false
     withSubmodules: true
     cloneDepth: 1
     checkoutPath: alpine-pkg-glibc
-    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
-  - !CommandStep
+    condition: SUCCESSFUL
+    optional: false
+  - type: CommandStep
     name: extract-version
     runInContainer: true
     image: alpine:edge
-    interpreter: !DefaultInterpreter
+    interpreter:
+      type: DefaultInterpreter
       commands: |
         # source to get $pkgver and $pkgrel
         . alpine-pkg-glibc/APKBUILD
         echo "$pkgver-r$pkgrel" > version
         echo "extracted version from APKBUILD: $(cat version)"
     useTTY: true
-    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
-  - !SetBuildVersionStep
+    condition: SUCCESSFUL
+    optional: false
+  - type: SetBuildVersionStep
     name: set-version
     buildVersion: '@file:version@'
-    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
-  - !CommandStep
+    condition: SUCCESSFUL
+    optional: false
+  - type: CommandStep
     name: build-glibc-bin
     runInContainer: true
     image: alpine:edge
-    interpreter: !DefaultInterpreter
+    interpreter:
+      type: DefaultInterpreter
       commands: |
         set -e
 
@@ -108,14 +116,16 @@ jobs:
         apk add git
         cd alpine-pkg-glibc
         commit="$(git rev-parse HEAD)"
-        b="$(git for-each-ref --format='%(objectname) %(refname:short)' refs/heads |
-             awk -v c="$commit" '$1 == c {print $2; exit}')"
-        if [ -z "$b" ]; then
+        branch="$(
+          git for-each-ref --format='%(objectname) %(refname:short)' refs/heads |
+          awk -v c="$commit" '$1 == c {print $2; exit}'
+        )"
+        if [ -z "$branch" ]; then
             echo "no branch has commit as tip" >&2
             exit
         fi
 
-        echo "build commit $commit is tip of branch $b. calculating checksum..."
+        echo -e "commit is tip of branch $branch.\ncalculating checksum..."
         apk add abuild
         adduser -SDGabuild -s/bin/sh abuild
         chown abuild:abuild . APKBUILD
@@ -132,10 +142,10 @@ jobs:
         git config user.name sev
         git config user.email git@@sev.monster
         git commit -m "[no ci] ci: update checksum for $BUILD_VERSION"
-        git push origin "HEAD:refs/heads/$b"
+        git push origin "HEAD:refs/heads/$branch"
         git push -f \
           "https://$GITHUB_USER:$GITHUB_PAT@@github.com/$GITHUB_REPO" \
-          "HEAD:refs/heads/$b" || true
+          "HEAD:refs/heads/$branch" || true
 
         echo "creating and pushing tag..."
         git tag -a "$BUILD_VERSION" -m "ci #$BUILD_NUMBER: release $BUILD_VERSION"
@@ -165,85 +175,87 @@ jobs:
     - name: GITHUB_REPO
       value: '@property:github-repo@'
     useTTY: false
-    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
-  - !PublishArtifactStep
+    condition: SUCCESSFUL
+    optional: false
+  - type: PublishArtifactStep
     name: publish-artifacts
     sourcePath: glibc-bin
     artifacts: glibc-bin-*-r*.tar.gz
-    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
+    condition: SUCCESSFUL
+    optional: false
   paramSpecs:
-  - !BooleanParam
+  - type: BooleanParam
     name: Allow Retries
     description: If disabled, the build will fail if there are any previous successful builds matching the version extracted from <code>APKBUILD</code> for this commit. Artifacts are not checked.
-    defaultValueProvider: !TrueDefaultValue {}
-  - !BooleanParam
+    defaultValueProvider:
+      type: TrueDefaultValue
+  - type: BooleanParam
     name: Fail If Cached
     description: Built <code>glibc-bin-*.tar.gz</code> tarballs are cached after build. Enabling this parameter will fail the build if there is a cached tarball from a previous build.
-    defaultValueProvider: !FalseDefaultValue {}
-  - !BooleanParam
+    defaultValueProvider:
+      type: FalseDefaultValue
+  - type: BooleanParam
     name: Clear Cache
     description: If a build already exists in the cache, and the build is not configured to fail in such a case, it will not be rebuilt, and will be used to tag a release. Enabling this will clear the cache and build a fresh tarball.
-    showCondition:
-      inputName: Fail If Cached
-      valueMatcher: !ValueIsOneOf
-        values:
-        - 'No'
-    defaultValueProvider: !FalseDefaultValue {}
+    defaultValueProvider:
+      type: FalseDefaultValue
   triggers:
-  - !BranchUpdateTrigger
+  - type: BranchUpdateTrigger
     branches: master
     paths: APKBUILD
     projects: sev/alpine-pkg-glibc
     paramMatrix:
     - name: Allow Retries
       secret: false
-      valuesProvider: !SpecifiedValues
+      valuesProvider:
+        type: SpecifiedValues
         values:
         - - 'No'
     - name: Fail If Cached
       secret: false
-      valuesProvider: !SpecifiedValues
+      valuesProvider:
+        type: SpecifiedValues
         values:
         - - 'Yes'
     - name: Clear Cache
       secret: false
-      valuesProvider: !SpecifiedValues
+      valuesProvider:
+        type: SpecifiedValues
         values:
         - - 'No'
-  retryCondition: never
   maxRetries: 3
   retryDelay: 30
   timeout: 14400
 - name: github-push
   jobExecutor: barbatos-docker
   steps:
-  - !PushRepository
+  - type: PushRepository
     name: push
     remoteUrl: https://github.com/@property:github-repo@
     passwordSecret: github-pat
     force: true
-    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
+    condition: SUCCESSFUL
+    optional: false
   triggers:
-  - !BranchUpdateTrigger
+  - type: BranchUpdateTrigger
     projects: sev/alpine-pkg-glibc
-  - !TagCreateTrigger
+  - type: TagCreateTrigger
     projects: sev/alpine-pkg-glibc
-  retryCondition: never
   maxRetries: 3
   retryDelay: 30
   timeout: 14400
 - name: github-pull
   jobExecutor: barbatos-docker
   steps:
-  - !PullRepository
+  - type: PullRepository
     name: pull
     remoteUrl: https://github.com/@property:github-repo@
     passwordSecret: github-pat
     refs: refs/heads/* refs/tags/*
     withLfs: false
     force: true
-    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
-  retryCondition: never
+    condition: SUCCESSFUL
+    optional: false
   maxRetries: 3
   retryDelay: 30
   timeout: 14400

@@ -17,7 +17,7 @@ this repo.
 
 If you have any features or fixes,
 [open an issue](https://git.sev.monster/sev/alpine-pkg-glibc/~issues) or
-[send a PR](https://github.com/sevmonster/alpine-pkg-glibc/~pulls) on OneDev.
+[send a PR](https://git.sev.monster/sev/alpine-pkg-glibc/~pulls) on OneDev.
 You may also
 [open an issue via email](mailto:onedev+sev/alpine-pkg-glibc@git.sev.monster).
 
